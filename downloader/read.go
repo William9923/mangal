@@ -2,7 +2,6 @@ package downloader
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/metafates/gache"
 	"github.com/metafates/mangal/color"
@@ -24,7 +23,6 @@ import (
 var cacher = gache.New[map[string]string](
 	&gache.Options{
 		Path:       where.Loaded(),
-		Lifetime:   1 * 24 * time.Hour,
 		FileSystem: &filesystem.GacheFs{},
 	},
 )
@@ -33,10 +31,6 @@ var cacher = gache.New[map[string]string](
 // and opening it with the configured reader.
 func Read(chapter *source.Chapter, progress func(string)) error {
 
-	var (
-		path string
-	)
-
 	if viper.GetBool(key.ReaderReadInBrowser) {
 		return open.StartWith(
 			chapter.URL,
@@ -44,19 +38,10 @@ func Read(chapter *source.Chapter, progress func(string)) error {
 		)
 	}
 
-	key := encodeChapterKey(chapter)
-	loaded, err := get(key)
-	if err == nil {
-		log.Info("find loaded chapter in cache")
-		progress("Load from cache")
-		path = loaded
-	} else {
-		path, err = readDirectlyFromSource(chapter, progress)
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-		save(key, path)
+	path, err := loadChapter(chapter, progress)
+	if err != nil {
+		log.Error(err)
+		return err
 	}
 
 	err = openRead(path, chapter, progress)
@@ -69,7 +54,32 @@ func Read(chapter *source.Chapter, progress func(string)) error {
 	return nil
 }
 
-func readDirectlyFromSource(chapter *source.Chapter, progress func(string)) (string, error) {
+func loadChapter(chapter *source.Chapter, progress func(string)) (string, error) {
+
+	// First option: try to read from cache first
+	key := encodeChapterKey(chapter)
+	loaded, err := get(key)
+	if err == nil {
+		exist, err := filesystem.Api().Exists(loaded)
+		if err == nil && exist {
+			log.Info("find loaded chapter in cache")
+			progress("Load from cache")
+			return loaded, nil
+		}
+	}
+
+	// Last / fallback option: read directly from source
+	path, err := fetchDirectlyFromSource(chapter, progress)
+	if err != nil {
+		log.Error(err)
+		return "", err
+	}
+	_ = save(key, path)
+
+	return path, nil
+}
+
+func fetchDirectlyFromSource(chapter *source.Chapter, progress func(string)) (string, error) {
 	if viper.GetBool(key.DownloaderReadDownloaded) && chapter.IsDownloaded() {
 		path, err := chapter.Path(false)
 		if err == nil {
