@@ -2,21 +2,41 @@ package downloader
 
 import (
 	"fmt"
+	"time"
+
+	"github.com/metafates/gache"
 	"github.com/metafates/mangal/color"
 	"github.com/metafates/mangal/constant"
 	"github.com/metafates/mangal/converter"
+	"github.com/metafates/mangal/filesystem"
 	"github.com/metafates/mangal/history"
 	"github.com/metafates/mangal/key"
 	"github.com/metafates/mangal/log"
 	"github.com/metafates/mangal/open"
 	"github.com/metafates/mangal/source"
 	"github.com/metafates/mangal/style"
+	"github.com/metafates/mangal/where"
 	"github.com/spf13/viper"
+)
+
+// Key: encoded chapter
+// Value: tmp file path for the chapter
+var cacher = gache.New[map[string]string](
+	&gache.Options{
+		Path:       where.Loaded(),
+		Lifetime:   1 * 24 * time.Hour,
+		FileSystem: &filesystem.GacheFs{},
+	},
 )
 
 // Read the chapter by downloading it with the given source
 // and opening it with the configured reader.
 func Read(chapter *source.Chapter, progress func(string)) error {
+
+	var (
+		path string
+	)
+
 	if viper.GetBool(key.ReaderReadInBrowser) {
 		return open.StartWith(
 			chapter.URL,
@@ -24,10 +44,36 @@ func Read(chapter *source.Chapter, progress func(string)) error {
 		)
 	}
 
+	key := encodeChapterKey(chapter)
+	loaded, err := get(key)
+	if err == nil {
+		log.Info("find loaded chapter in cache")
+		progress("Load from cache")
+		path = loaded
+	} else {
+		path, err = readDirectlyFromSource(chapter, progress)
+		if err != nil {
+			log.Error(err)
+			return err
+		}
+		save(key, path)
+	}
+
+	err = openRead(path, chapter, progress)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+
+	progress("Done")
+	return nil
+}
+
+func readDirectlyFromSource(chapter *source.Chapter, progress func(string)) (string, error) {
 	if viper.GetBool(key.DownloaderReadDownloaded) && chapter.IsDownloaded() {
 		path, err := chapter.Path(false)
 		if err == nil {
-			return openRead(path, chapter, progress)
+			return path, nil
 		}
 	}
 
@@ -37,20 +83,20 @@ func Read(chapter *source.Chapter, progress func(string)) error {
 	pages, err := chapter.Source().PagesOf(chapter)
 	if err != nil {
 		log.Error(err)
-		return err
+		return "", err
 	}
 
 	err = chapter.DownloadPages(true, progress)
 	if err != nil {
 		log.Error(err)
-		return err
+		return "", err
 	}
 
 	log.Info("getting " + viper.GetString(key.FormatsUse) + " converter")
 	conv, err := converter.Get(viper.GetString(key.FormatsUse))
 	if err != nil {
 		log.Error(err)
-		return err
+		return "", err
 	}
 
 	log.Info("converting " + viper.GetString(key.FormatsUse))
@@ -63,17 +109,10 @@ func Read(chapter *source.Chapter, progress func(string)) error {
 	path, err := conv.SaveTemp(chapter)
 	if err != nil {
 		log.Error(err)
-		return err
+		return "", err
 	}
 
-	err = openRead(path, chapter, progress)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	progress("Done")
-	return nil
+	return path, nil
 }
 
 func openRead(path string, chapter *source.Chapter, progress func(string)) error {
@@ -121,4 +160,53 @@ func openRead(path string, chapter *source.Chapter, progress func(string)) error
 	log.Info("opened without errors")
 
 	return nil
+}
+
+// get returns all loaded chapters information + tmp file location from the loaded file
+func get(key string) (filepath string, err error) {
+	cached, expired, err := cacher.Get()
+	if err != nil {
+		return "", err
+	}
+
+	if expired || cached == nil {
+		return "", fmt.Errorf("expired cache") // TODO: check if we had file containing all possible error
+	}
+
+	if _, ok := cached[key]; !ok {
+		return "", fmt.Errorf("file not loaded")
+	}
+
+	return cached[key], nil
+}
+
+// save saves the chapter to the history file
+func save(key string, val string) error {
+	cached, expired, err := cacher.Get()
+	if err != nil {
+		return err
+	}
+
+	if expired || cached == nil {
+		cached = make(map[string]string)
+	}
+
+	cached[key] = val
+	return cacher.Set(cached)
+}
+
+func encodeChapterKey(c *source.Chapter) string {
+	var sourceName string
+	if c.Source() != nil {
+		sourceName = c.Source().Name()
+	}
+	return fmt.Sprintf("%s-%s-%d-%s-%d-%s-%s",
+		c.Manga,
+		c.Name,
+		c.Index,
+		fmt.Sprintf("%04d", c.Index),
+		len(c.Manga.Chapters),
+		c.Volume,
+		sourceName,
+	)
 }

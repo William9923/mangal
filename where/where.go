@@ -94,3 +94,10 @@ func Temp() string {
 	tempDir := filepath.Join(os.TempDir(), constant.Mangal)
 	return mkdir(tempDir)
 }
+
+// Loaded (manga) path
+// to save read and pre-fetch manga chapters
+// Will create the directory if it doesn't exist
+func Loaded() string {
+	return filepath.Join(Cache(), "loaded-manga.json")
+}
