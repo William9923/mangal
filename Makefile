@@ -30,7 +30,7 @@ build:
 	@go build "$(build_flags)"
 
 test:
-	@go test ./...
+	@go test ./... -v
 
 uninstall:
 	@rm -f $(shell which mangal)
