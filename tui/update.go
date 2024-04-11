@@ -564,7 +564,7 @@ func (b *statefulBubble) updateChapters(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			chapter := b.chaptersC.SelectedItem().(*listItem).internal.(*source.Chapter)
 			b.newState(readState)
-			return b, tea.Batch(b.readChapter(chapter), b.waitForChapterRead(), b.startLoading())
+			return b, tea.Batch(b.readChapter(chapter), b.waitForChapterRead(chapter), b.startLoading())
 		case key.Matches(msg, b.keymap.confirm):
 			if len(b.selectedChapters) != 0 {
 				b.newState(confirmState)
@@ -575,7 +575,7 @@ func (b *statefulBubble) updateChapters(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				chapter := b.chaptersC.SelectedItem().(*listItem).internal.(*source.Chapter)
 				b.newState(readState)
-				return b, tea.Batch(b.readChapter(chapter), b.waitForChapterRead(), b.startLoading())
+				return b, tea.Batch(b.readChapter(chapter), b.waitForChapterRead(chapter), b.startLoading())
 			}
 		}
 	}

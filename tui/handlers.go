@@ -218,6 +218,7 @@ func (b *statefulBubble) waitForChapters() tea.Cmd {
 func (b *statefulBubble) readChapter(chapter *source.Chapter) tea.Cmd {
 	return func() tea.Msg {
 		b.currentDownloadingChapter = chapter
+
 		err := downloader.Read(chapter, func(s string) {
 			b.progressStatus = s
 		})
@@ -232,10 +233,26 @@ func (b *statefulBubble) readChapter(chapter *source.Chapter) tea.Cmd {
 	}
 }
 
-func (b *statefulBubble) waitForChapterRead() tea.Cmd {
+func (b *statefulBubble) waitForChapterRead(chapter *source.Chapter) tea.Cmd {
 	return func() tea.Msg {
 		select {
 		case res := <-b.chapterReadChannel:
+
+			chapters, err := b.selectedManga.Source.ChaptersOf(b.selectedManga)
+			if err != nil {
+				return res // NOTE: skip preload
+			}
+
+			for _, c := range chapters {
+				if c.Index-1 == chapter.Index {
+					_ = downloader.Preload(c, func(string) {})
+				}
+
+				if c.Index+1 == chapter.Index {
+					_ = downloader.Preload(c, func(string) {})
+				}
+			}
+
 			return res
 		case err := <-b.errorChannel:
 			b.lastError = err
