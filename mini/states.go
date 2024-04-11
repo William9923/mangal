@@ -418,19 +418,23 @@ func (m *mini) handleHistorySelectState() error {
 	return nil
 }
 
-func readWithPreload(chapters source.Chapters, idx int, progress func(string)) error {
-
-	currChapter, _ := chapters.GetCurrentChapter(idx)
+func readWithPreload(chapters []*source.Chapter, idx int, progress func(string)) error {
 
 	go func() {
-		nextChapter, err := chapters.GetNextChapter(idx, 1)
-		if err != nil {
+		if idx+1 >= len(chapters) {
 			return
 		}
-		_ = downloader.Preload(nextChapter, func(string) {})
+		_ = downloader.Preload(chapters[idx+1], func(string) {})
 	}()
 
-	err := downloader.Read(currChapter, progress)
+	go func() {
+		if idx-1 < 0 {
+			return
+		}
+		_ = downloader.Preload(chapters[idx-1], func(string) {})
+	}()
+
+	err := downloader.Read(chapters[idx], progress)
 	if err != nil {
 		return err
 	}
