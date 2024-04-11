@@ -131,32 +131,11 @@ func Run(options *Options) (err error) {
 				log.Warn(err)
 			}
 		} else {
-			err := readWithPreload(chapters, i)
+			err := downloader.Read(chapters[i], func(string) {})
 			if err != nil {
 				return err
 			}
 		}
-	}
-
-	return nil
-}
-
-func readWithPreload(chapters source.Chapters, idx int) error {
-
-	currChapter, _ := chapters.GetCurrentChapter(idx)
-
-	go func() {
-		nextChapter, err := chapters.GetNextChapter(idx, 1)
-		if err != nil {
-			log.Error(err)
-			return
-		}
-		_ = downloader.Preload(nextChapter, func(string) {})
-	}()
-
-	err := downloader.Read(currChapter, func(string) {})
-	if err != nil {
-		return err
 	}
 
 	return nil
