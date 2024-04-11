@@ -58,7 +58,7 @@ func Run(options *Options) (err error) {
 		return err
 	}
 
-	var chapters source.Chapters
+	var chapters []*source.Chapter
 	if len(mangas) == 0 {
 		if options.Json {
 			marshalled, err := asJson([]*source.Manga{}, options)

@@ -221,10 +221,10 @@ func (m *mini) handleChapterReadState() error {
 
 	var (
 		err      error
-		readLoop func(source.Chapters, int, *controls, bool, bool)
+		readLoop func([]*source.Chapter, int, *controls, bool, bool)
 	)
 
-	readLoop = func(chapters source.Chapters, idx int, c *controls, hasPrev, hasNext bool) {
+	readLoop = func(chapters []*source.Chapter, idx int, c *controls, hasPrev, hasNext bool) {
 		util.ClearScreen()
 		var erase = func() {}
 
