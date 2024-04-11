@@ -2,29 +2,30 @@ package downloader
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/metafates/gache"
 	"github.com/metafates/mangal/color"
 	"github.com/metafates/mangal/constant"
 	"github.com/metafates/mangal/converter"
-	"github.com/metafates/mangal/filesystem"
 	"github.com/metafates/mangal/history"
 	"github.com/metafates/mangal/key"
 	"github.com/metafates/mangal/log"
 	"github.com/metafates/mangal/open"
 	"github.com/metafates/mangal/source"
 	"github.com/metafates/mangal/style"
-	"github.com/metafates/mangal/where"
 	"github.com/spf13/viper"
+)
+
+var (
+	ErrExpiredCache  = fmt.Errorf("expired cache")
+	ErrFileNotLoaded = fmt.Errorf("file not loaded")
 )
 
 // Key: encoded chapter
 // Value: tmp file path for the chapter
 var cacher = gache.New[map[string]string](
-	&gache.Options{
-		Path:       where.Loaded(),
-		FileSystem: &filesystem.GacheFs{},
-	},
+	&gache.Options{},
 )
 
 // Read the chapter by downloading it with the given source
@@ -54,14 +55,23 @@ func Read(chapter *source.Chapter, progress func(string)) error {
 	return nil
 }
 
+func Preload(chapter *source.Chapter, progress func(string)) error {
+
+	if _, err := loadChapter(chapter, progress); err != nil {
+		log.Error(err)
+		return err
+	}
+
+	return nil
+}
+
 func loadChapter(chapter *source.Chapter, progress func(string)) (string, error) {
 
 	// First option: try to read from cache first
 	key := encodeChapterKey(chapter)
 	loaded, err := get(key)
 	if err == nil {
-		exist, err := filesystem.Api().Exists(loaded)
-		if err == nil && exist {
+		if _, err := os.Stat(loaded); err == nil {
 			log.Info("find loaded chapter in cache")
 			progress("Load from cache")
 			return loaded, nil
@@ -180,11 +190,11 @@ func get(key string) (filepath string, err error) {
 	}
 
 	if expired || cached == nil {
-		return "", fmt.Errorf("expired cache") // TODO: check if we had file containing all possible error
+		return "", ErrExpiredCache
 	}
 
 	if _, ok := cached[key]; !ok {
-		return "", fmt.Errorf("file not loaded")
+		return "", ErrFileNotLoaded
 	}
 
 	return cached[key], nil

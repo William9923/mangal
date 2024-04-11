@@ -221,14 +221,14 @@ func (m *mini) handleChapterReadState() error {
 
 	var (
 		err      error
-		readLoop func(*source.Chapter, *controls, bool, bool)
+		readLoop func(source.Chapters, int, *controls, bool, bool)
 	)
 
-	readLoop = func(chapter *source.Chapter, c *controls, hasPrev, hasNext bool) {
+	readLoop = func(chapters source.Chapters, idx int, c *controls, hasPrev, hasNext bool) {
 		util.ClearScreen()
 		var erase = func() {}
 
-		err = downloader.Read(chapter, func(s string) {
+		err = readWithPreload(chapters, idx, func(s string) {
 			erase()
 			erase = progress(s)
 		})
@@ -240,7 +240,7 @@ func (m *mini) handleChapterReadState() error {
 
 		erase()
 
-		title(fmt.Sprintf("Currently reading %s", chapter.Name))
+		title(fmt.Sprintf("Currently reading %s", chapters[idx].Name))
 
 		var options []*bind
 		if hasPrev {
@@ -262,7 +262,7 @@ func (m *mini) handleChapterReadState() error {
 		case next:
 			c.next <- struct{}{}
 		case reread:
-			readLoop(chapter, c, hasPrev, hasNext)
+			readLoop(chapters, idx, c, hasPrev, hasNext)
 		case back:
 			m.previousState()
 			c.stop <- struct{}{}
@@ -290,7 +290,7 @@ func (m *mini) handleChapterReadState() error {
 			hasNext = i+1 < len(m.selectedChapters)
 		)
 
-		go readLoop(m.selectedChapters[i], c, hasPrev, hasNext)
+		go readLoop(m.selectedChapters, i, c, hasPrev, hasNext)
 
 		select {
 		case <-c.next:
@@ -415,5 +415,25 @@ func (m *mini) handleHistorySelectState() error {
 	m.selectedChapters = chaps[c.Index-1:]
 
 	m.newState(chapterReadState)
+	return nil
+}
+
+func readWithPreload(chapters source.Chapters, idx int, progress func(string)) error {
+
+	currChapter, _ := chapters.GetCurrentChapter(idx)
+
+	go func() {
+		nextChapter, err := chapters.GetNextChapter(idx, 1)
+		if err != nil {
+			return
+		}
+		_ = downloader.Preload(nextChapter, func(string) {})
+	}()
+
+	err := downloader.Read(currChapter, progress)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

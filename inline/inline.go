@@ -58,8 +58,7 @@ func Run(options *Options) (err error) {
 		return err
 	}
 
-	var chapters []*source.Chapter
-
+	var chapters source.Chapters
 	if len(mangas) == 0 {
 		if options.Json {
 			marshalled, err := asJson([]*source.Manga{}, options)
@@ -116,9 +115,9 @@ func Run(options *Options) (err error) {
 		return err
 	}
 
-	for _, chapter := range chapters {
+	for i := range chapters {
 		if options.Download {
-			path, err := downloader.Download(chapter, func(string) {})
+			path, err := downloader.Download(chapters[i], func(string) {})
 			if err != nil {
 				if viper.GetBool(key.DownloaderStopOnError) {
 					return err
@@ -132,11 +131,32 @@ func Run(options *Options) (err error) {
 				log.Warn(err)
 			}
 		} else {
-			err := downloader.Read(chapter, func(string) {})
+			err := readWithPreload(chapters, i)
 			if err != nil {
 				return err
 			}
 		}
+	}
+
+	return nil
+}
+
+func readWithPreload(chapters source.Chapters, idx int) error {
+
+	currChapter, _ := chapters.GetCurrentChapter(idx)
+
+	go func() {
+		nextChapter, err := chapters.GetNextChapter(idx, 1)
+		if err != nil {
+			log.Error(err)
+			return
+		}
+		_ = downloader.Preload(nextChapter, func(string) {})
+	}()
+
+	err := downloader.Read(currChapter, func(string) {})
+	if err != nil {
+		return err
 	}
 
 	return nil
